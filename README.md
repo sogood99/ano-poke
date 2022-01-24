@@ -9,15 +9,18 @@ Pokémon Showdown RL agent. Plans:
 - Observation thoughts:
 
   - For each pokemon, 18 dim for pokemon type (one hot), 6 for base stats, 2 for HP and current hp percent (total 26 per mon)
-  - For enemy pokemon, 18 dim for pokemon type (total 18)
+  - For current pokemon, 1 more for if it is dynamaxed (total 1)
+  - For enemy pokemon, 18 dim for pokemon type, 2 for health and health percentage and 1 if dynamaxed (total 21)
   - $7*2$ more slots for self and enemy current pokemon boosts (total 14)
   - For each available moves, needs 18 for type, 1 for base attack, 1 for is inflicts status, 7 for self boost 7 for enemy boost. Each available move has possible secondary effects, take the one with highest probability and 1 slot for status, 7 for self boost and 7 for enemy boost (total 49 per move)
-  - All in all, totals to $6*26+18+14+4*49=388$ input dimensions.
+  - All in all, totals to $6*26+1+21+14+4*49=392$ input dimensions.
 
 - Reward thoughts:
 
   - +5 for fainting enemy pokemon.
   - -5 for fainting in self party pokemon.
+  - +10 for victory.
+  - -10 for loss.
   - +0.1 for % stat buff / enemy stat debuff
   - -0.1 for % stat debuff / enemy stat buff
   - +% health of enemy pokemon dealt
@@ -25,8 +28,9 @@ Pokémon Showdown RL agent. Plans:
 
   To let the agent learn the basics of pokemon for the first few iterations
 
+  - -20 for choosing a move and having > $\varepsilon$ probability for switching or visa versa
   - -20 for having > $\varepsilon$ probability for fainted pokemon.
   - -20 for dynamaxing but probability distribution for switching > $\varepsilon$.
 
 - Output thoughts:
-  - 6 dimension for pokemon and 4 for moveset = $10$ dimensions.
+  - 6 dimension for pokemon and 4 for moveset and 1 for dynamaxing = $11$ dimensions.
