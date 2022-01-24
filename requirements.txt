@@ -1,0 +1,7 @@
+torch
+tensorboard
+poke-env
+numpy
+scipy
+matplotlib
+pandas
