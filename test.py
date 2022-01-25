@@ -13,7 +13,7 @@ from random import choice
 class MaxDamagePlayer(Player):
     def choose_move(self, battle: Battle) -> BattleOrder:
         print("-----------------------------------")
-        print(list(battle.team.values()))
+        print(list(battle.team.values())[0].status)
         print(list(battle.opponent_team.values()))
         current_mon: Pokemon = battle.active_pokemon
         print((current_mon.base_stats, current_mon.type_1,
