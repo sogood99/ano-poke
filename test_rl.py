@@ -4,7 +4,9 @@ import numpy as np
 from poke_env.player.env_player import *
 from poke_env.player.random_player import RandomPlayer
 from poke_env.environment.move import *
+from poke_env.environment.pokemon import *
 
+from torch import nn
 from stable_baselines3 import PPO
 import stable_baselines3
 from stable_baselines3.ppo.policies import MlpPolicy
@@ -83,7 +85,7 @@ class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
         # --------------- moves -------------------
         def construct_move_vec(move: Move) -> np.array:
             if move == None:
-                return np.zeros(36)
+                return np.zeros(40)
             move_base_power = move.base_power / 100
             move_accuracy = move.accuracy
 
@@ -104,7 +106,7 @@ class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
             move_heal = move.heal
 
             def get_boost(boost_dict: Dict) -> np.array:
-                boost_arr = np.zeros(5)
+                boost_arr = np.zeros(7)
                 if (boost_dict == None):
                     return boost_arr
                 boost_arr[0] = boost_dict.get("spd", 0)
@@ -112,6 +114,8 @@ class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
                 boost_arr[2] = boost_dict.get("def", 0)
                 boost_arr[3] = boost_dict.get("spa", 0)
                 boost_arr[4] = boost_dict.get("spd", 0)
+                boost_arr[5] = boost_dict.get("accuracy", 0)
+                boost_arr[6] = boost_dict.get("evasion", 0)
                 return boost_arr
 
             move_self_boost = get_boost(move.self_boost)
@@ -151,7 +155,94 @@ class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
 
     @property
     def observation_space(self):
-        return spaces.Box(low=-500, high=500, shape=(182,))
+        return spaces.Box(low=-500, high=500, shape=(198,))
+
+
+class RlPlayer2(SimpleRLEnvPlayer2):
+    def set_model(self, model: PPO):
+        self.model = model
+
+    def choose_move(self, battle: AbstractBattle) -> BattleOrder:
+        if self.model is None:
+            assert False, "Please set the model before using SimpleRlPlayer"
+        obs = self.embed_battle(battle)
+        action, _states = self.model.predict(observation=obs)
+
+        return self._action_to_move(action, battle)
+
+    def _battle_finished_callback(self, battle: AbstractBattle) -> None:
+        pass
+
+
+class SimpleRLEnvPlayer3(SimpleRLEnvPlayer):
+
+    def embed_battle(self, battle: Battle):
+
+        # ------------------ pokemon stuff ---------------------
+        def get_mon_vec(mon: Pokemon, is_enemy=False):
+            if mon == None:
+                return np.zeros(30, dtype=np.float64) if is_enemy == False else np.zeros(21, dtype=np.float64)
+
+            mon_type_vec = np.zeros(18, dtype=np.float64)
+            if mon.types != None:
+                mon_type_vec[mon.type_1.value-1] = 1
+                if mon.type_2 != None:
+                    mon_type_vec[mon.type_2.value-1] = 1
+
+            if is_enemy == False:
+                mon_stat_vec = np.zeros(7)
+                mon_stat_vec[0] = mon.stats.get("accuracy", 0) / 100
+                mon_stat_vec[1] = mon.stats.get("atk", 0) / 100
+                mon_stat_vec[2] = mon.stats.get("def", 0) / 100
+                mon_stat_vec[3] = mon.stats.get("evasion", 0) / 100
+                mon_stat_vec[4] = mon.stats.get("spa", 0) / 100
+                mon_stat_vec[5] = mon.stats.get("spd", 0) / 100
+                mon_stat_vec[6] = mon.stats.get("spe", 0) / 100
+                mon_total_hp = mon.max_hp / 100
+                mon_current_hp = mon.current_hp / 100
+
+            mon_has_status = 1.0 if isinstance(
+                mon.status, Status) and mon.status != Status.FNT else 0.0
+            mon_is_faint = 1.0 if mon.status is Status.FNT else 0.0
+
+            mon_is_active = 1.0 if mon.active == True else 0.0
+
+            if is_enemy == False:
+                return np.concatenate([mon_type_vec, mon_stat_vec, [mon_total_hp, mon_current_hp, mon_has_status, mon_is_faint, mon_is_active]], dtype=np.float64)
+            else:
+                return np.concatenate([mon_type_vec, [mon_has_status, mon_is_faint, mon_is_active]], dtype=np.float64)
+
+        mon_vecs = [get_mon_vec(mon) for mon in battle.team.values()]
+        mon_vecs += [get_mon_vec(mon, is_enemy=True)
+                     for mon in battle.opponent_team.values()]
+        mon_vecs += [get_mon_vec(None, is_enemy=True)
+                     for _ in range(6-len(battle.opponent_team))]
+
+        current_mon_is_dyna = 1.0 if battle.active_pokemon.is_dynamaxed else 0.0
+
+        # ------------------ moves stuff ---------------------
+
+        moves_base_power = np.zeros(4, dtype=np.float64)
+        moves_dmg_multiplier = np.ones(4, dtype=np.float64)
+        for i, move in enumerate(battle.available_moves):
+            moves_base_power[i] = move.base_power / 100
+            if move.type:
+                moves_dmg_multiplier[i] = move.type.damage_multiplier(
+                    battle.opponent_active_pokemon.type_1,
+                    battle.opponent_active_pokemon.type_2,
+                )
+
+        return np.concatenate(
+            [
+                *mon_vecs,
+                moves_base_power,
+                moves_dmg_multiplier,
+                [current_mon_is_dyna]
+            ], dtype=np.float64)
+
+    @property
+    def observation_space(self):
+        return spaces.Box(low=-500, high=500, shape=(315,))
 
 
 class MaxDamagePlayer(Player):
@@ -170,7 +261,7 @@ class MaxDamagePlayer(Player):
 
 def ppo_train(env, model: PPO, nb_steps):
     model.learn(total_timesteps=nb_steps)
-    model.save("./logs/simple_rl_2")
+    model.save("./logs/simple_rl_3")
 
 
 def ppo_eval(env: Player, model: PPO, nb_episodes):
@@ -198,7 +289,7 @@ if __name__ == "__main__":
     #     "82.157.5.28:8000", "https://play.pokemonshowdown.com/action.php")
     server_config = None
 
-    env_player = SimpleRLEnvPlayer2(
+    env_player = SimpleRLEnvPlayer3(
         battle_format="gen8randombattle", server_configuration=server_config)
 
     opponent = RandomPlayer(battle_format="gen8randombattle",
@@ -211,14 +302,22 @@ if __name__ == "__main__":
         battle_format="gen8randombattle", server_configuration=server_config)
     third_opponent.set_model(third_opponent_model)
 
-    # ppo model
-    model = PPO(MlpPolicy, env=env_player, verbose=1,
-                tensorboard_log="./logs/simple_rl_2")
+    fourth_opponent_model = opp_model = PPO.load("./logs/simple_rl_2.zip")
+    fourth_opponent = RlPlayer2(
+        battle_format="gen8randombattle", server_configuration=server_config)
+    fourth_opponent.set_model(fourth_opponent_model)
 
-    print("Training")
+    # ppo model
+    policy_kwargs = dict(activation_fn=nn.ReLU,
+                         net_arch=[256, 256, dict(pi=[256, 256], vf=[256, 256])])
+    # model = PPO(MlpPolicy, env=env_player, verbose=1,
+    # tensorboard_log="./logs/simple_rl_3")
+    model = PPO.load("./logs/simple_rl_3.zip", env=env_player)
+
+    print(f"Training")
     env_player.play_against(
         env_algorithm=ppo_train,
-        opponent=second_opponent,
+        opponent=third_opponent,
         env_algorithm_kwargs={"model": model,
                               "nb_steps": NB_TRAINING_STEPS},
     )
@@ -243,6 +342,14 @@ if __name__ == "__main__":
     env_player.play_against(
         env_algorithm=ppo_eval,
         opponent=third_opponent,
+        env_algorithm_kwargs={"model": model,
+                              "nb_episodes": NB_EVALUATION_EPISODES},
+    )
+
+    print("\nResults against intermediate type damage player:")
+    env_player.play_against(
+        env_algorithm=ppo_eval,
+        opponent=fourth_opponent,
         env_algorithm_kwargs={"model": model,
                               "nb_episodes": NB_EVALUATION_EPISODES},
     )

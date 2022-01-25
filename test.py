@@ -1,4 +1,5 @@
 import asyncio
+from graphlib import CycleError
 from tabulate import tabulate
 from poke_env.player.player import *
 from poke_env.player.battle_order import *
@@ -16,8 +17,8 @@ class MaxDamagePlayer(Player):
         print([l.status for l in list(battle.team.values())])
         print(list(battle.opponent_team.values()))
         current_mon: Pokemon = battle.active_pokemon
-        print((current_mon.base_stats, current_mon.type_1,
-              current_mon.type_2, current_mon.moves, current_mon.boosts) if current_mon else None)
+        print((current_mon.stats, current_mon.type_1,
+              current_mon.type_2, current_mon.moves, current_mon.boosts, current_mon.active) if current_mon else None)
         mon_moves: Dict[Move] = current_mon.moves if current_mon else None
         first_move: Move = choice(
             list(mon_moves.values())) if mon_moves else None
