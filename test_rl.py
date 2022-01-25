@@ -14,8 +14,8 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from gym import spaces
 
 
-class SimpleRLPlayer(Gen8EnvSinglePlayer):
-    def embed_battle(self, battle):
+class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
+    def embed_battle(self, battle: AbstractBattle):
         # -1 indicates that the move does not have a base power
         # or is not available
         moves_base_power = -np.ones(4)
@@ -58,7 +58,23 @@ class SimpleRLPlayer(Gen8EnvSinglePlayer):
         return spaces.Discrete(len(super().action_space))
 
 
-class MaxDamagePlayer(RandomPlayer):
+class SimpleRlPlayer(SimpleRLEnvPlayer):
+    def set_model(self, model: PPO):
+        self.model = model
+
+    def choose_move(self, battle: AbstractBattle) -> BattleOrder:
+        if self.model is None:
+            assert False, "Please set the model before using SimpleRlPlayer"
+        obs = self.embed_battle(battle)
+        action, _states = self.model.predict(observation=obs)
+
+        return self._action_to_move(action, battle)
+
+    def _battle_finished_callback(self, battle: AbstractBattle) -> None:
+        pass
+
+
+class MaxDamagePlayer(Player):
     def choose_move(self, battle):
         # If the player can attack, it will
         if battle.available_moves:
@@ -85,24 +101,38 @@ def ppo_eval(env: Player, model: PPO, nb_episodes):
     print(f"Player won {env.n_won_battles} out of {env.n_finished_battles}")
 
 
+def ppo_play(player: EnvPlayer, model: PPO):
+    env = model.get_env()
+    obs = env.reset()
+    while True:
+        action, _states = model.predict(observation=obs, deterministic=True)
+        obs, reward, done, info = env.step(action)
+
+
 NB_TRAINING_STEPS = int(2e5)
 NB_EVALUATION_EPISODES = 100
 
 
 if __name__ == "__main__":
-    env_player = SimpleRLPlayer(battle_format="gen8randombattle")
+    env_player = SimpleRLEnvPlayer(battle_format="gen8randombattle")
 
     opponent = RandomPlayer(battle_format="gen8randombattle")
     second_opponent = MaxDamagePlayer(battle_format="gen8randombattle")
 
     # ppo model
 
-    model = PPO(MlpPolicy, env=env_player, verbose=1,
-                tensorboard_log="./logs/test_ppo")
+    # model = PPO(MlpPolicy, env=env_player, verbose=1,
+    # tensorboard_log="./logs/test_ppo")
+    model = PPO.load("./logs/test_ppo_model", env=env_player)
+
+    opp_model = PPO.load("./logs/test_ppo_model")
+    trained_agent = SimpleRlPlayer()
+    trained_agent.set_model(model)
+
     print("Training")
     env_player.play_against(
         env_algorithm=ppo_train,
-        opponent=second_opponent,
+        opponent=trained_agent,
         env_algorithm_kwargs={"model": model,
                               "nb_steps": NB_TRAINING_STEPS},
     )
@@ -122,3 +152,11 @@ if __name__ == "__main__":
         env_algorithm_kwargs={"model": model,
                               "nb_episodes": NB_EVALUATION_EPISODES},
     )
+
+    trained_agent = SimpleRlPlayer()
+    trained_agent.set_model(model)
+
+    async def test_human():
+        await trained_agent.send_challenges("murkrowa", n_challenges=1)
+
+    asyncio.get_event_loop().run_until_complete(test_human())
