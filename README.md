@@ -8,7 +8,7 @@ Pokémon Showdown RL agent. Plans:
 
 - Observation thoughts:
 
-  - For each pokemon, 18 dim for pokemon type (one hot), 6 for base stats, 2 for HP and current hp percent, 2 for status, 1 for if active (total 29 per mon)
+  - For each pokemon, 18 dim for pokemon type (one hot), 6 for total stats, 2 for HP and current hp percent, 2 for status, 1 for if active (total 29 per mon)
   - For enemy pokemon, 18 dim for pokemon type, 2 for health and health percentage, 2 for status, 1 for if active (total 23)
   - For current pokemon, 1 more for if it is dynamaxed (total 1)
   - $7*2$ more slots for self and enemy current pokemon boosts (total 14)
