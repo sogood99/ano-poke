@@ -15,28 +15,21 @@ from gym import spaces
 
 class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
     def embed_battle(self, battle: AbstractBattle):
-        # -1 indicates that the move does not have a base power
-        # or is not available
-        moves_base_power = -np.ones(4)
+        moves_base_power = np.zeros(4)
         moves_dmg_multiplier = np.ones(4)
         for i, move in enumerate(battle.available_moves):
-            moves_base_power[i] = (
-                move.base_power / 100
-            )  # Simple rescaling to facilitate learning
+            moves_base_power[i] = move.base_power / 100
             if move.type:
                 moves_dmg_multiplier[i] = move.type.damage_multiplier(
                     battle.opponent_active_pokemon.type_1,
                     battle.opponent_active_pokemon.type_2,
                 )
 
-        remaining_mon_team = (
-            len([mon for mon in battle.team.values() if mon.fainted]) / 6
-        )
-        remaining_mon_opponent = (
-            len([mon for mon in battle.opponent_team.values() if mon.fainted]) / 6
-        )
+        remaining_mon_team = len(
+            [mon for mon in battle.team.values() if mon.fainted]) / 6
+        remaining_mon_opponent = len(
+            [mon for mon in battle.opponent_team.values() if mon.fainted]) / 6
 
-        # Final vector with 10 components
         return np.concatenate(
             [
                 moves_base_power,
@@ -48,16 +41,26 @@ class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
     def compute_reward(self, battle) -> float:
         return self.reward_computing_helper(battle, fainted_value=2, hp_value=1, status_value=0.2, victory_value=30)
 
+    def choose_move(self, battle: AbstractBattle) -> BattleOrder:
+        if battle not in self._observations or battle not in self._actions:
+            self._init_battle(battle)
+        self._observations[battle].put(self.embed_battle(battle))
+        action = self._actions[battle].get()
+        if action > 4:
+            action += 12
+
+        return self._action_to_move(action, battle)
+
     @property
     def observation_space(self):
         return spaces.Box(low=0, high=float("inf"), shape=(10,))
 
     @property
     def action_space(self):
-        return spaces.Discrete(len(super().action_space))
+        return spaces.Discrete(14)
 
 
-class SimpleRlPlayer(SimpleRLEnvPlayer):
+class RlPlayer(SimpleRLEnvPlayer):
     def set_model(self, model: PPO):
         self.model = model
 
@@ -71,6 +74,32 @@ class SimpleRlPlayer(SimpleRLEnvPlayer):
 
     def _battle_finished_callback(self, battle: AbstractBattle) -> None:
         pass
+
+
+class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
+    def embed_battle(self, battle: AbstractBattle):
+        moves_base_power = np.zeros(4)
+        moves_dmg_multiplier = np.ones(4)
+        for i, move in enumerate(battle.available_moves):
+            moves_base_power[i] = move.base_power / 100
+            if move.type:
+                moves_dmg_multiplier[i] = move.type.damage_multiplier(
+                    battle.opponent_active_pokemon.type_1,
+                    battle.opponent_active_pokemon.type_2,
+                )
+
+        remaining_mon_team = len(
+            [mon for mon in battle.team.values() if mon.fainted]) / 6
+        remaining_mon_opponent = len(
+            [mon for mon in battle.opponent_team.values() if mon.fainted]) / 6
+
+        return np.concatenate(
+            [
+                moves_base_power,
+                moves_dmg_multiplier,
+                [remaining_mon_team, remaining_mon_opponent],
+            ], dtype=float
+        )
 
 
 class MaxDamagePlayer(Player):
@@ -113,7 +142,9 @@ NB_EVALUATION_EPISODES = 100
 
 
 if __name__ == "__main__":
-    env_player = SimpleRLEnvPlayer(battle_format="gen8randombattle")
+    # server_config = ServerConfiguration(
+    #     "82.157.5.28:8000", "https://play.pokemonshowdown.com/action.php")
+    server_config = None
 
     env_player = SimpleRLEnvPlayer(
         battle_format="gen8randombattle", server_configuration=server_config)
@@ -125,22 +156,22 @@ if __name__ == "__main__":
 
     # ppo model
 
-    # model = PPO(MlpPolicy, env=env_player, verbose=1,
-    # tensorboard_log="./logs/test_ppo")
-    model = PPO.load("./logs/test_ppo_model", env=env_player)
+    model = PPO(MlpPolicy, env=env_player, verbose=1,
+                tensorboard_log="./logs/test_ppo")
+    # model = PPO.load("./logs/test_ppo_model", env=env_player)
 
-    opp_model = PPO.load("./logs/test_ppo_model")
-    trained_agent = SimpleRlPlayer(
-        battle_format="gen8randombattle", server_configuration=server_config)
-    trained_agent.set_model(opp_model)
+    # opp_model = PPO.load("./logs/test_ppo_model")
+    # trained_agent = RlPlayer(
+    #     battle_format="gen8randombattle", server_configuration=server_config)
+    # trained_agent.set_model(opp_model)
 
-    # print("Training")
-    # env_player.play_against(
-    #     env_algorithm=ppo_train,
-    #     opponent=trained_agent,
-    #     env_algorithm_kwargs={"model": model,
-    #                           "nb_steps": NB_TRAINING_STEPS},
-    # )
+    print("Training")
+    env_player.play_against(
+        env_algorithm=ppo_train,
+        opponent=second_opponent,
+        env_algorithm_kwargs={"model": model,
+                              "nb_steps": NB_TRAINING_STEPS},
+    )
 
     print("Results against random player:")
     env_player.play_against(
@@ -158,15 +189,15 @@ if __name__ == "__main__":
                               "nb_episodes": NB_EVALUATION_EPISODES},
     )
 
-    print("\nResults against last trained player:")
-    env_player.play_against(
-        env_algorithm=ppo_eval,
-        opponent=trained_agent,
-        env_algorithm_kwargs={"model": model,
-                              "nb_episodes": NB_EVALUATION_EPISODES},
-    )
+    # print("\nResults against last trained player:")
+    # env_player.play_against(
+    #     env_algorithm=ppo_eval,
+    #     opponent=trained_agent,
+    #     env_algorithm_kwargs={"model": model,
+    #                           "nb_episodes": NB_EVALUATION_EPISODES},
+    # )
 
-    async def test_human():
-        await trained_agent.send_challenges("murkrowa", n_challenges=1)
+    # async def test_human():
+    #     await trained_agent.send_challenges("murkrowa", n_challenges=1)
 
-    asyncio.get_event_loop().run_until_complete(test_human())
+    # asyncio.get_event_loop().run_until_complete(test_human())

@@ -33,4 +33,4 @@ Pokémon Showdown RL agent. Plans:
   - -20 for dynamaxing but probability distribution for switching > $\varepsilon$.
 
 - Output thoughts:
-  - 6 dimension for pokemon and 4 for moveset and 1 for dynamaxing = $11$ dimensions.
+  - 4 for moves w/o dynamax, 4 for moves with dynamax, 6 dimensions for switching pokemon $= 14$ total.
