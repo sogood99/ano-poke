@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-from matplotlib.pyplot import step
 import numpy as np
 
 from poke_env.player.env_player import *
@@ -116,8 +115,13 @@ NB_EVALUATION_EPISODES = 100
 if __name__ == "__main__":
     env_player = SimpleRLEnvPlayer(battle_format="gen8randombattle")
 
-    opponent = RandomPlayer(battle_format="gen8randombattle")
-    second_opponent = MaxDamagePlayer(battle_format="gen8randombattle")
+    env_player = SimpleRLEnvPlayer(
+        battle_format="gen8randombattle", server_configuration=server_config)
+
+    opponent = RandomPlayer(battle_format="gen8randombattle",
+                            server_configuration=server_config)
+    second_opponent = MaxDamagePlayer(
+        battle_format="gen8randombattle", server_configuration=server_config)
 
     # ppo model
 
@@ -126,16 +130,17 @@ if __name__ == "__main__":
     model = PPO.load("./logs/test_ppo_model", env=env_player)
 
     opp_model = PPO.load("./logs/test_ppo_model")
-    trained_agent = SimpleRlPlayer()
-    trained_agent.set_model(model)
+    trained_agent = SimpleRlPlayer(
+        battle_format="gen8randombattle", server_configuration=server_config)
+    trained_agent.set_model(opp_model)
 
-    print("Training")
-    env_player.play_against(
-        env_algorithm=ppo_train,
-        opponent=trained_agent,
-        env_algorithm_kwargs={"model": model,
-                              "nb_steps": NB_TRAINING_STEPS},
-    )
+    # print("Training")
+    # env_player.play_against(
+    #     env_algorithm=ppo_train,
+    #     opponent=trained_agent,
+    #     env_algorithm_kwargs={"model": model,
+    #                           "nb_steps": NB_TRAINING_STEPS},
+    # )
 
     print("Results against random player:")
     env_player.play_against(
@@ -153,8 +158,13 @@ if __name__ == "__main__":
                               "nb_episodes": NB_EVALUATION_EPISODES},
     )
 
-    trained_agent = SimpleRlPlayer()
-    trained_agent.set_model(model)
+    print("\nResults against last trained player:")
+    env_player.play_against(
+        env_algorithm=ppo_eval,
+        opponent=trained_agent,
+        env_algorithm_kwargs={"model": model,
+                              "nb_episodes": NB_EVALUATION_EPISODES},
+    )
 
     async def test_human():
         await trained_agent.send_challenges("murkrowa", n_challenges=1)
