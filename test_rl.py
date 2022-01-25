@@ -3,6 +3,7 @@ import numpy as np
 
 from poke_env.player.env_player import *
 from poke_env.player.random_player import RandomPlayer
+from poke_env.environment.move import *
 
 from stable_baselines3 import PPO
 import stable_baselines3
@@ -53,7 +54,7 @@ class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
 
     @property
     def observation_space(self):
-        return spaces.Box(low=0, high=float("inf"), shape=(10,))
+        return spaces.Box(low=-500, high=500, shape=(10,))
 
     @property
     def action_space(self):
@@ -78,25 +79,61 @@ class RlPlayer(SimpleRLEnvPlayer):
 
 class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
     def embed_battle(self, battle: Battle):
-        moves_base_power = np.zeros(4)
-        moves_dmg_multiplier = np.ones(4)
-        for i, move in enumerate(battle.available_moves):
-            moves_base_power[i] = move.base_power / 100
+
+        # --------------- moves -------------------
+        def construct_move_vec(move: Move) -> np.array:
+            if move == None:
+                return np.zeros(36)
+            move_base_power = move.base_power / 100
+            move_accuracy = move.accuracy
+
+            move_type_vec = np.zeros(18)
+            move_dmg_mult = move.expected_hits
             if move.type:
-                moves_dmg_multiplier[i] = move.type.damage_multiplier(
+                move_dmg_mult *= move.type.damage_multiplier(
                     battle.opponent_active_pokemon.type_1,
                     battle.opponent_active_pokemon.type_2,
                 )
+                move_type_vec[move.type.value - 1] = 1
 
+            move_category = np.zeros(3)
+            move_category[move.category.value - 1] = 1
+
+            move_status = 1. if move.status != None or move.volatile_status != None else 0.
+
+            move_heal = move.heal
+
+            def get_boost(boost_dict: Dict) -> np.array:
+                boost_arr = np.zeros(5)
+                if (boost_dict == None):
+                    return boost_arr
+                boost_arr[0] = boost_dict.get("spd", 0)
+                boost_arr[1] = boost_dict.get("atk", 0)
+                boost_arr[2] = boost_dict.get("def", 0)
+                boost_arr[3] = boost_dict.get("spa", 0)
+                boost_arr[4] = boost_dict.get("spd", 0)
+                return boost_arr
+
+            move_self_boost = get_boost(move.self_boost)
+            move_enemy_boost = get_boost(move.boosts)
+
+            return np.concatenate([move_type_vec, [move_base_power, move_dmg_mult, move_accuracy], move_category, [move_status, move_heal], move_self_boost, move_enemy_boost])
+
+        move_vecs = [construct_move_vec(move)
+                     for move in battle.available_moves]
+        move_vecs += [construct_move_vec(None)
+                      for _ in range(4-len(battle.available_moves))]
+
+        # party pokemon
         active_mon_type = np.zeros(18)
-        active_mon_type[battle.active_pokemon.type_1.value] = 1
+        active_mon_type[battle.active_pokemon.type_1.value-1] = 1
         if battle.active_pokemon.type_2 is not None:
-            active_mon_type[battle.active_pokemon.type_2.value] = 1
+            active_mon_type[battle.active_pokemon.type_2.value-1] = 1
 
         enemy_active_mon_type = np.zeros(18)
-        enemy_active_mon_type[battle.opponent_active_pokemon.type_1.value] = 1
+        enemy_active_mon_type[battle.opponent_active_pokemon.type_1.value-1] = 1
         if battle.opponent_active_pokemon.type_2 is not None:
-            active_mon_type[battle.opponent_active_pokemon.type_2.value] = 1
+            active_mon_type[battle.opponent_active_pokemon.type_2.value-1] = 1
 
         remaining_mon_team = len(
             [mon for mon in battle.team.values() if mon.fainted]) / 6
@@ -105,13 +142,16 @@ class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
 
         return np.concatenate(
             [
-                moves_base_power,
-                moves_dmg_multiplier,
+                *move_vecs,
                 active_mon_type,
                 enemy_active_mon_type,
                 [remaining_mon_team, remaining_mon_opponent],
             ], dtype=float
         )
+
+    @property
+    def observation_space(self):
+        return spaces.Box(low=-500, high=500, shape=(182,))
 
 
 class MaxDamagePlayer(Player):
@@ -158,7 +198,7 @@ if __name__ == "__main__":
     #     "82.157.5.28:8000", "https://play.pokemonshowdown.com/action.php")
     server_config = None
 
-    env_player = SimpleRLEnvPlayer(
+    env_player = SimpleRLEnvPlayer2(
         battle_format="gen8randombattle", server_configuration=server_config)
 
     opponent = RandomPlayer(battle_format="gen8randombattle",
