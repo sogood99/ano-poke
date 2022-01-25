@@ -3,7 +3,7 @@
 Pokémon Showdown RL agent. Plans:
 
 - PPO training for Deep Recurrent RL.
-- Observation consists of party current pokemon's stats (total health , type info, health percentage, move infos, buffs, debuffs), opponent current pokemon stats (mirror of current pokemon), opponent last move information, party pokemon's brief information (type, total health, health percentage), and if dynamaxable.
+- Observation consists of party current pokemon's stats (total health , type info, health percentage, move infos, buffs, debuffs), opponent current pokemon stats (same as current pokemon), opponent last move information, party pokemon's brief information (type, total health, health percentage), and if dynamaxable.
 - Actions consist of the a probability distribution of moves, dynamax, and pokemon. Use softmax output.
 
 - Observation thoughts:
