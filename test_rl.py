@@ -77,7 +77,7 @@ class RlPlayer(SimpleRLEnvPlayer):
 
 
 class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
-    def embed_battle(self, battle: AbstractBattle):
+    def embed_battle(self, battle: Battle):
         moves_base_power = np.zeros(4)
         moves_dmg_multiplier = np.ones(4)
         for i, move in enumerate(battle.available_moves):
@@ -88,6 +88,16 @@ class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
                     battle.opponent_active_pokemon.type_2,
                 )
 
+        active_mon_type = np.zeros(18)
+        active_mon_type[battle.active_pokemon.type_1.value] = 1
+        if battle.active_pokemon.type_2 is not None:
+            active_mon_type[battle.active_pokemon.type_2.value] = 1
+
+        enemy_active_mon_type = np.zeros(18)
+        enemy_active_mon_type[battle.opponent_active_pokemon.type_1.value] = 1
+        if battle.opponent_active_pokemon.type_2 is not None:
+            active_mon_type[battle.opponent_active_pokemon.type_2.value] = 1
+
         remaining_mon_team = len(
             [mon for mon in battle.team.values() if mon.fainted]) / 6
         remaining_mon_opponent = len(
@@ -97,6 +107,8 @@ class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
             [
                 moves_base_power,
                 moves_dmg_multiplier,
+                active_mon_type,
+                enemy_active_mon_type,
                 [remaining_mon_team, remaining_mon_opponent],
             ], dtype=float
         )
@@ -118,7 +130,7 @@ class MaxDamagePlayer(Player):
 
 def ppo_train(env, model: PPO, nb_steps):
     model.learn(total_timesteps=nb_steps)
-    model.save("./logs/test_ppo_model")
+    model.save("./logs/simple_rl_2")
 
 
 def ppo_eval(env: Player, model: PPO, nb_episodes):
@@ -154,16 +166,14 @@ if __name__ == "__main__":
     second_opponent = MaxDamagePlayer(
         battle_format="gen8randombattle", server_configuration=server_config)
 
+    third_opponent_model = opp_model = PPO.load("./logs/simple_rl_1.zip")
+    third_opponent = RlPlayer(
+        battle_format="gen8randombattle", server_configuration=server_config)
+    third_opponent.set_model(third_opponent_model)
+
     # ppo model
-
     model = PPO(MlpPolicy, env=env_player, verbose=1,
-                tensorboard_log="./logs/test_ppo")
-    # model = PPO.load("./logs/test_ppo_model", env=env_player)
-
-    # opp_model = PPO.load("./logs/test_ppo_model")
-    # trained_agent = RlPlayer(
-    #     battle_format="gen8randombattle", server_configuration=server_config)
-    # trained_agent.set_model(opp_model)
+                tensorboard_log="./logs/simple_rl_2")
 
     print("Training")
     env_player.play_against(
@@ -189,13 +199,13 @@ if __name__ == "__main__":
                               "nb_episodes": NB_EVALUATION_EPISODES},
     )
 
-    # print("\nResults against last trained player:")
-    # env_player.play_against(
-    #     env_algorithm=ppo_eval,
-    #     opponent=trained_agent,
-    #     env_algorithm_kwargs={"model": model,
-    #                           "nb_episodes": NB_EVALUATION_EPISODES},
-    # )
+    print("\nResults against basic type damage player:")
+    env_player.play_against(
+        env_algorithm=ppo_eval,
+        opponent=third_opponent,
+        env_algorithm_kwargs={"model": model,
+                              "nb_episodes": NB_EVALUATION_EPISODES},
+    )
 
     # async def test_human():
     #     await trained_agent.send_challenges("murkrowa", n_challenges=1)

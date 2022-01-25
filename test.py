@@ -11,7 +11,10 @@ from random import choice
 
 
 class MaxDamagePlayer(Player):
-    def choose_move(self, battle: AbstractBattle) -> BattleOrder:
+    def choose_move(self, battle: Battle) -> BattleOrder:
+        print("-----------------------------------")
+        print(list(battle.team.values()))
+        print(list(battle.opponent_team.values()))
         current_mon: Pokemon = battle.active_pokemon
         print((current_mon.base_stats, current_mon.type_1,
               current_mon.type_2, current_mon.moves, current_mon.boosts) if current_mon else None)
@@ -52,7 +55,7 @@ async def main():
 
 async def test_human():
     player = MaxDamagePlayer()
-    await player.send_challenges("mankrow", n_challenges=1)
+    await player.send_challenges("murkrowa", n_challenges=1)
 
 
 if __name__ == "__main__":
