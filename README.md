@@ -12,8 +12,8 @@ Pokémon Showdown RL agent. Plans:
   - For current pokemon, 1 more for if it is dynamaxed (total 1)
   - For enemy pokemon, 18 dim for pokemon type, 2 for health and health percentage and 1 if dynamaxed (total 21)
   - $7*2$ more slots for self and enemy current pokemon boosts (total 14)
-  - For each available moves, needs 18 for type, 1 for base attack, 1 for is inflicts status, 7 for self boost 7 for enemy boost. Each available move has possible secondary effects, take the one with highest probability and 1 slot for status, 7 for self boost and 7 for enemy boost (total 49 per move)
-  - All in all, totals to $6*26+1+21+14+4*49=392$ input dimensions.
+  - For each available moves, needs 18 for type, 1 for base attack, 3 for move type (physical, special, status), 1 for if inflicts status, 7 for self boost 7 for enemy boost. Each available move has possible secondary effects, take the one with highest probability and 1 slot for status, 7 for self boost and 7 for enemy boost (total 52 per move)
+  - All in all, totals to $6*26+1+21+14+4*52=404$ input dimensions.
 
 - Reward thoughts:
 
