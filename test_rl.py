@@ -15,6 +15,8 @@ from stable_baselines3.common.evaluation import evaluate_policy
 
 from gym import spaces
 
+SAVE_DIR = "./logs/simple_rl_3"
+
 
 class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
     def embed_battle(self, battle: AbstractBattle):
@@ -261,7 +263,7 @@ class MaxDamagePlayer(Player):
 
 def ppo_train(env, model: PPO, nb_steps):
     model.learn(total_timesteps=nb_steps)
-    model.save("./logs/simple_rl_3")
+    model.save(SAVE_DIR)
 
 
 def ppo_eval(env: Player, model: PPO, nb_episodes):
@@ -272,15 +274,7 @@ def ppo_eval(env: Player, model: PPO, nb_episodes):
     print(f"Player won {env.n_won_battles} out of {env.n_finished_battles}")
 
 
-def ppo_play(player: EnvPlayer, model: PPO):
-    env = model.get_env()
-    obs = env.reset()
-    while True:
-        action, _states = model.predict(observation=obs, deterministic=True)
-        obs, reward, done, info = env.step(action)
-
-
-NB_TRAINING_STEPS = int(2e5)
+NB_TRAINING_STEPS = int(5e5)
 NB_EVALUATION_EPISODES = 100
 
 
@@ -292,8 +286,9 @@ if __name__ == "__main__":
     env_player = SimpleRLEnvPlayer3(
         battle_format="gen8randombattle", server_configuration=server_config)
 
-    opponent = RandomPlayer(battle_format="gen8randombattle",
-                            server_configuration=server_config)
+    first_opponent = RandomPlayer(battle_format="gen8randombattle",
+                                  server_configuration=server_config)
+
     second_opponent = MaxDamagePlayer(
         battle_format="gen8randombattle", server_configuration=server_config)
 
@@ -307,17 +302,24 @@ if __name__ == "__main__":
         battle_format="gen8randombattle", server_configuration=server_config)
     fourth_opponent.set_model(fourth_opponent_model)
 
+    # schedule
+    def linear_schedule(initial_value: float) -> Callable[[float], float]:
+        def func(progress_remaining: float) -> float:
+            return progress_remaining * initial_value
+
+        return func
+
     # ppo model
     policy_kwargs = dict(activation_fn=nn.ReLU,
                          net_arch=[256, 256, dict(pi=[256, 256], vf=[256, 256])])
-    # model = PPO(MlpPolicy, env=env_player, verbose=1,
-    # tensorboard_log="./logs/simple_rl_3")
-    model = PPO.load("./logs/simple_rl_3.zip", env=env_player)
+    model = PPO(MlpPolicy, env=env_player, verbose=1, learning_rate=linear_schedule(0.1),
+                tensorboard_log=SAVE_DIR)
+    # model = PPO.load(SAVE_DIR + ".zip", env=env_player)
 
     print(f"Training")
     env_player.play_against(
         env_algorithm=ppo_train,
-        opponent=third_opponent,
+        opponent=second_opponent,
         env_algorithm_kwargs={"model": model,
                               "nb_steps": NB_TRAINING_STEPS},
     )
@@ -325,7 +327,7 @@ if __name__ == "__main__":
     print("Results against random player:")
     env_player.play_against(
         env_algorithm=ppo_eval,
-        opponent=opponent,
+        opponent=first_opponent,
         env_algorithm_kwargs={"model": model,
                               "nb_episodes": NB_EVALUATION_EPISODES},
     )
