@@ -55,7 +55,7 @@ async def main():
 
 
 async def test_human():
-    player = MaxDamagePlayer()
+    player = MaxDamagePlayer(battle_format="gen8randombattle")
     await player.send_challenges("murkrowa", n_challenges=1)
 
 

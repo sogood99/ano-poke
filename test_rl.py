@@ -13,10 +13,20 @@ from torch import nn
 from stable_baselines3 import PPO
 import stable_baselines3
 from stable_baselines3.ppo.policies import MlpPolicy
-from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.evaluation import evaluate_policy
 
 from gym import spaces
+
+BATTLE_FORMAT = "gen8randombattle"
+
+
+def transform_action(action: int) -> int:
+    process_action = action - 1
+    if process_action >= 4:
+        process_action += 12 - 4
+    assert \
+        -1 <= process_action < 4 or 12 <= process_action < 22, f"Simple assert {process_action}"
+    return process_action
 
 
 class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
@@ -52,10 +62,8 @@ class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
             self._init_battle(battle)
         self._observations[battle].put(self.embed_battle(battle))
         action = self._actions[battle].get()
-        if action > 4:
-            action += 12
 
-        return self._action_to_move(action, battle)
+        return self._action_to_move(transform_action(action), battle)
 
     @property
     def observation_space(self):
@@ -63,7 +71,7 @@ class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
 
     @property
     def action_space(self):
-        return spaces.Discrete(14)
+        return spaces.Discrete(15)
 
 
 class RlPlayer(SimpleRLEnvPlayer):
@@ -76,7 +84,7 @@ class RlPlayer(SimpleRLEnvPlayer):
         obs = self.embed_battle(battle)
         action, _states = self.model.predict(observation=obs)
 
-        return self._action_to_move(action, battle)
+        return self._action_to_move(transform_action(action), battle)
 
     def _battle_finished_callback(self, battle: AbstractBattle) -> None:
         pass
@@ -161,20 +169,8 @@ class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
         return spaces.Box(low=-500, high=500, shape=(198,))
 
 
-class RlPlayer2(SimpleRLEnvPlayer2):
-    def set_model(self, model: PPO):
-        self.model = model
-
-    def choose_move(self, battle: AbstractBattle) -> BattleOrder:
-        if self.model is None:
-            assert False, "Please set the model before using SimpleRlPlayer"
-        obs = self.embed_battle(battle)
-        action, _states = self.model.predict(observation=obs)
-
-        return self._action_to_move(action, battle)
-
-    def _battle_finished_callback(self, battle: AbstractBattle) -> None:
-        pass
+class RlPlayer2(RlPlayer, SimpleRLEnvPlayer2):
+    pass
 
 
 class SimpleRLEnvPlayer3(SimpleRLEnvPlayer):
@@ -248,20 +244,8 @@ class SimpleRLEnvPlayer3(SimpleRLEnvPlayer):
         return spaces.Box(low=-500, high=500, shape=(315,))
 
 
-class RlPlayer3(SimpleRLEnvPlayer3):
-    def set_model(self, model: PPO):
-        self.model = model
-
-    def choose_move(self, battle: AbstractBattle) -> BattleOrder:
-        if self.model is None:
-            assert False, "Please set the model before using SimpleRlPlayer"
-        obs = self.embed_battle(battle)
-        action, _states = self.model.predict(observation=obs)
-
-        return self._action_to_move(action, battle)
-
-    def _battle_finished_callback(self, battle: AbstractBattle) -> None:
-        pass
+class RlPlayer3(RlPlayer, SimpleRLEnvPlayer3):
+    pass
 
 
 class MaxDamagePlayer(Player):
@@ -304,13 +288,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-t', '--train', type=int,
-                        action='store', required=False, help="which argument to train")
+                        action='store', required=False, help="which argument agent train")
     parser.add_argument('-o', '--opp', type=int,
                         action='store', required=False, help="which opponent", nargs='?')
     parser.add_argument('-l', '--load', action='store_true',
                         required=False)
     parser.add_argument('-c', '--cross_eval',
-                        action='store', type=int, required=False)
+                        action='store', type=int, nargs='?', const=100, required=False)
     parser.add_argument('-p', '--play',
                         action='store', type=str, required=False, help="opponent to play against")
     args = parser.parse_args()
@@ -323,13 +307,13 @@ if __name__ == "__main__":
         assert 0 <= args.train < len(
             ref_list), f"-t must be between {0} and {len(ref_list)}"
         env_player = ref_list[args.train](
-            battle_format="gen8randombattle", server_configuration=server_config)
+            battle_format=BATTLE_FORMAT, server_configuration=server_config)
 
         # ppo model
         policy_kwargs = dict(activation_fn=nn.ReLU,
                              net_arch=[256, 256, dict(pi=[256, 256], vf=[256, 256])])
 
-        save_dir = "./logs/simple_rl_"+args.train
+        save_dir = "./logs/simple_rl_" + str(args.train)
 
         if args.load == False:
             print("Initializing new model...")
@@ -339,25 +323,25 @@ if __name__ == "__main__":
             print("Loading old model...")
             model = PPO.load(save_dir + ".zip", env=env_player)
 
-    first_opponent = RandomPlayer(battle_format="gen8randombattle",
+    first_opponent = RandomPlayer(battle_format=BATTLE_FORMAT,
                                   server_configuration=server_config)
 
     second_opponent = MaxDamagePlayer(
-        battle_format="gen8randombattle", server_configuration=server_config)
+        battle_format=BATTLE_FORMAT, server_configuration=server_config)
 
     third_opponent_model = PPO.load("./logs/simple_rl_1.zip")
     third_opponent = RlPlayer(
-        battle_format="gen8randombattle", server_configuration=server_config)
+        battle_format=BATTLE_FORMAT, server_configuration=server_config)
     third_opponent.set_model(third_opponent_model)
 
     fourth_opponent_model = PPO.load("./logs/simple_rl_2.zip")
     fourth_opponent = RlPlayer2(
-        battle_format="gen8randombattle", server_configuration=server_config)
+        battle_format=BATTLE_FORMAT, server_configuration=server_config)
     fourth_opponent.set_model(fourth_opponent_model)
 
     fifth_opponent_model = PPO.load("./logs/simple_rl_3.zip")
     fifth_opponent = RlPlayer3(
-        battle_format="gen8randombattle", server_configuration=server_config)
+        battle_format=BATTLE_FORMAT, server_configuration=server_config)
     fifth_opponent.set_model(fifth_opponent_model)
 
     opponent_list = [first_opponent, second_opponent, third_opponent,
@@ -367,48 +351,49 @@ if __name__ == "__main__":
         if args.opp != None:
             assert 0 <= args.opp < len(
                 opponent_list), f"Opponent must be betweent {0} and {len(opponent_list)}"
-            opp_idx = args.o
+            opp_idx = args.opp
         else:
-            opp_idx = 2
+            opp_idx = 1
         opp = opponent_list[opp_idx]
         env_player.play_against(
             env_algorithm=ppo_train,
             opponent=opp,
             env_algorithm_kwargs={"model": model,
-                                  "nb_steps": NB_TRAINING_STEPS},
+                                  "nb_steps": NB_TRAINING_STEPS,
+                                  "save_dir": save_dir+".zip"},
         )
 
-        print("Results against random player:")
-        env_player.play_against(
-            env_algorithm=ppo_eval,
-            opponent=first_opponent,
-            env_algorithm_kwargs={"model": model,
-                                  "nb_episodes": NB_EVALUATION_EPISODES},
-        )
+        # print("Results against random player:")
+        # env_player.play_against(
+        #     env_algorithm=ppo_eval,
+        #     opponent=first_opponent,
+        #     env_algorithm_kwargs={"model": model,
+        #                           "nb_episodes": NB_EVALUATION_EPISODES},
+        # )
 
-        print("\nResults against max player:")
-        env_player.play_against(
-            env_algorithm=ppo_eval,
-            opponent=second_opponent,
-            env_algorithm_kwargs={"model": model,
-                                  "nb_episodes": NB_EVALUATION_EPISODES},
-        )
+        # print("\nResults against max player:")
+        # env_player.play_against(
+        #     env_algorithm=ppo_eval,
+        #     opponent=second_opponent,
+        #     env_algorithm_kwargs={"model": model,
+        #                           "nb_episodes": NB_EVALUATION_EPISODES},
+        # )
 
-        print("\nResults against basic type damage player:")
-        env_player.play_against(
-            env_algorithm=ppo_eval,
-            opponent=third_opponent,
-            env_algorithm_kwargs={"model": model,
-                                  "nb_episodes": NB_EVALUATION_EPISODES},
-        )
+        # print("\nResults against basic type damage player:")
+        # env_player.play_against(
+        #     env_algorithm=ppo_eval,
+        #     opponent=third_opponent,
+        #     env_algorithm_kwargs={"model": model,
+        #                           "nb_episodes": NB_EVALUATION_EPISODES},
+        # )
 
-        print("\nResults against intermediate type damage player:")
-        env_player.play_against(
-            env_algorithm=ppo_eval,
-            opponent=fourth_opponent,
-            env_algorithm_kwargs={"model": model,
-                                  "nb_episodes": NB_EVALUATION_EPISODES},
-        )
+        # print("\nResults against intermediate type damage player:")
+        # env_player.play_against(
+        #     env_algorithm=ppo_eval,
+        #     opponent=fourth_opponent,
+        #     env_algorithm_kwargs={"model": model,
+        #                           "nb_episodes": NB_EVALUATION_EPISODES},
+        # )
 
     if args.cross_eval != None:
         print("Starting cross evaluation...")
