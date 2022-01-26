@@ -99,8 +99,64 @@ class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
             ], dtype=float
         )
 
+    def reward_computing_helper(
+        self,
+        battle: AbstractBattle,
+        *,
+        fainted_value: float = 0.0,
+        hp_value: float = 0.0,
+        boost_value: float = 0.0,
+        switch_value: float = 0.0,
+        number_of_pokemons: int = 6,
+        starting_value: float = 0.0,
+        status_value: float = 0.0,
+        victory_value: float = 1.0,
+        time_value: float = 0.0,
+    ) -> float:
+        if battle not in self._reward_buffer:
+            self._reward_buffer[battle] = starting_value
+            self._reward_active_mon = battle.active_pokemon
+        current_value = 0
+
+        if not self._reward_active_mon.fainted and battle.active_pokemon != self._reward_active_mon:
+            current_value += switch_value
+        self._reward_active_mon = battle.active_pokemon
+
+        for mon in battle.team.values():
+            current_value += mon.current_hp_fraction * hp_value
+            if mon.fainted:
+                current_value -= fainted_value
+            elif mon.status is not None:
+                current_value -= status_value
+            current_value += sum(mon.boosts.values()) * boost_value
+
+        current_value += (number_of_pokemons - len(battle.team)) * hp_value
+
+        for mon in battle.opponent_team.values():
+            current_value -= mon.current_hp_fraction * hp_value
+            if mon.fainted:
+                current_value += fainted_value
+            elif mon.status is not None:
+                current_value += status_value
+            current_value -= sum(mon.boosts.values()) * boost_value
+
+        current_value -= (number_of_pokemons -
+                          len(battle.opponent_team)) * hp_value
+
+        if battle.won:
+            current_value += victory_value
+        elif battle.lost:
+            current_value -= victory_value
+        else:
+            current_value -= time_value
+
+        to_return = current_value - self._reward_buffer[battle]
+        self._reward_buffer[battle] = current_value
+
+        return to_return
+
     def compute_reward(self, battle) -> float:
-        return self.reward_computing_helper(battle, fainted_value=2, hp_value=1, status_value=0.2, victory_value=30)
+        return self.reward_computing_helper(battle, fainted_value=2, hp_value=1, boost_value=0.05, switch_value=0.05, status_value=0.2, victory_value=30, time_value=0.001)
 
     def choose_move(self, battle: AbstractBattle) -> BattleOrder:
         if battle not in self._observations or battle not in self._actions:
@@ -362,6 +418,7 @@ if __name__ == "__main__":
         else:
             opp_idx = 1
         opp = opponent_list[opp_idx]
+        print(f"Training with {opp}")
         env_player.play_against(
             env_algorithm=ppo_train,
             opponent=opp,
