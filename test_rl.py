@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 import numpy as np
+import argparse
+from tabulate import tabulate
 
+from poke_env.player.utils import *
 from poke_env.player.env_player import *
 from poke_env.player.random_player import RandomPlayer
 from poke_env.environment.move import *
@@ -14,8 +17,6 @@ from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.evaluation import evaluate_policy
 
 from gym import spaces
-
-SAVE_DIR = "./logs/simple_rl_3"
 
 
 class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
@@ -247,6 +248,22 @@ class SimpleRLEnvPlayer3(SimpleRLEnvPlayer):
         return spaces.Box(low=-500, high=500, shape=(315,))
 
 
+class RlPlayer3(SimpleRLEnvPlayer3):
+    def set_model(self, model: PPO):
+        self.model = model
+
+    def choose_move(self, battle: AbstractBattle) -> BattleOrder:
+        if self.model is None:
+            assert False, "Please set the model before using SimpleRlPlayer"
+        obs = self.embed_battle(battle)
+        action, _states = self.model.predict(observation=obs)
+
+        return self._action_to_move(action, battle)
+
+    def _battle_finished_callback(self, battle: AbstractBattle) -> None:
+        pass
+
+
 class MaxDamagePlayer(Player):
     def choose_move(self, battle):
         # If the player can attack, it will
@@ -261,9 +278,9 @@ class MaxDamagePlayer(Player):
             return self.choose_random_move(battle)
 
 
-def ppo_train(env, model: PPO, nb_steps):
+def ppo_train(env, model: PPO, nb_steps, save_dir):
     model.learn(total_timesteps=nb_steps)
-    model.save(SAVE_DIR)
+    model.save(save_dir)
 
 
 def ppo_eval(env: Player, model: PPO, nb_episodes):
@@ -283,8 +300,44 @@ if __name__ == "__main__":
     #     "82.157.5.28:8000", "https://play.pokemonshowdown.com/action.php")
     server_config = None
 
-    env_player = SimpleRLEnvPlayer3(
-        battle_format="gen8randombattle", server_configuration=server_config)
+    # --------------------- argument parser -----------------------
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-t', '--train', type=int,
+                        action='store', required=False, help="which argument to train")
+    parser.add_argument('-o', '--opp', type=int,
+                        action='store', required=False, help="which opponent", nargs='?')
+    parser.add_argument('-l', '--load', action='store_true',
+                        required=False)
+    parser.add_argument('-c', '--cross_eval',
+                        action='store_true', required=False)
+    parser.add_argument('-p', '--play',
+                        action='store', type=str, required=False, help="opponent to play against")
+    args = parser.parse_args()
+
+    # --------------------- main stuff ---------------------------
+
+    ref_list = [SimpleRLEnvPlayer, SimpleRLEnvPlayer2,
+                SimpleRLEnvPlayer3]
+    if args.train != None:
+        assert 0 <= args.train < len(
+            ref_list), f"-t must be between {0} and {len(ref_list)}"
+        env_player = ref_list[args.train](
+            battle_format="gen8randombattle", server_configuration=server_config)
+
+        # ppo model
+        policy_kwargs = dict(activation_fn=nn.ReLU,
+                             net_arch=[256, 256, dict(pi=[256, 256], vf=[256, 256])])
+
+        save_dir = "./logs/simple_rl_"+args.train
+
+        if args.load == False:
+            print("Initializing new model...")
+            model = PPO(MlpPolicy, env=env_player, verbose=1,
+                        tensorboard_log=save_dir)
+        else:
+            print("Loading old model...")
+            model = PPO.load(save_dir + ".zip", env=env_player)
 
     first_opponent = RandomPlayer(battle_format="gen8randombattle",
                                   server_configuration=server_config)
@@ -292,71 +345,91 @@ if __name__ == "__main__":
     second_opponent = MaxDamagePlayer(
         battle_format="gen8randombattle", server_configuration=server_config)
 
-    third_opponent_model = opp_model = PPO.load("./logs/simple_rl_1.zip")
+    third_opponent_model = PPO.load("./logs/simple_rl_1.zip")
     third_opponent = RlPlayer(
         battle_format="gen8randombattle", server_configuration=server_config)
     third_opponent.set_model(third_opponent_model)
 
-    fourth_opponent_model = opp_model = PPO.load("./logs/simple_rl_2.zip")
+    fourth_opponent_model = PPO.load("./logs/simple_rl_2.zip")
     fourth_opponent = RlPlayer2(
         battle_format="gen8randombattle", server_configuration=server_config)
     fourth_opponent.set_model(fourth_opponent_model)
 
-    # schedule
-    def linear_schedule(initial_value: float) -> Callable[[float], float]:
-        def func(progress_remaining: float) -> float:
-            return progress_remaining * initial_value
+    fifth_opponent_model = PPO.load("./logs/simple_rl_3.zip")
+    fifth_opponent = RlPlayer3(
+        battle_format="gen8randombattle", server_configuration=server_config)
+    fifth_opponent.set_model(fifth_opponent_model)
 
-        return func
+    opponent_list = [first_opponent, second_opponent, third_opponent,
+                     fourth_opponent, first_opponent]
+    if args.train != None:
+        print(f"Training")
+        if args.opp != None:
+            assert 0 <= args.opp < len(
+                opponent_list), f"Opponent must be betweent {0} and {len(opponent_list)}"
+            opp_idx = args.o
+        else:
+            opp_idx = 2
+        opp = opponent_list[opp_idx]
+        env_player.play_against(
+            env_algorithm=ppo_train,
+            opponent=opp,
+            env_algorithm_kwargs={"model": model,
+                                  "nb_steps": NB_TRAINING_STEPS},
+        )
 
-    # ppo model
-    policy_kwargs = dict(activation_fn=nn.ReLU,
-                         net_arch=[256, 256, dict(pi=[256, 256], vf=[256, 256])])
-    model = PPO(MlpPolicy, env=env_player, verbose=1, learning_rate=linear_schedule(0.1),
-                tensorboard_log=SAVE_DIR)
-    # model = PPO.load(SAVE_DIR + ".zip", env=env_player)
+        print("Results against random player:")
+        env_player.play_against(
+            env_algorithm=ppo_eval,
+            opponent=first_opponent,
+            env_algorithm_kwargs={"model": model,
+                                  "nb_episodes": NB_EVALUATION_EPISODES},
+        )
 
-    print(f"Training")
-    env_player.play_against(
-        env_algorithm=ppo_train,
-        opponent=second_opponent,
-        env_algorithm_kwargs={"model": model,
-                              "nb_steps": NB_TRAINING_STEPS},
-    )
+        print("\nResults against max player:")
+        env_player.play_against(
+            env_algorithm=ppo_eval,
+            opponent=second_opponent,
+            env_algorithm_kwargs={"model": model,
+                                  "nb_episodes": NB_EVALUATION_EPISODES},
+        )
 
-    print("Results against random player:")
-    env_player.play_against(
-        env_algorithm=ppo_eval,
-        opponent=first_opponent,
-        env_algorithm_kwargs={"model": model,
-                              "nb_episodes": NB_EVALUATION_EPISODES},
-    )
+        print("\nResults against basic type damage player:")
+        env_player.play_against(
+            env_algorithm=ppo_eval,
+            opponent=third_opponent,
+            env_algorithm_kwargs={"model": model,
+                                  "nb_episodes": NB_EVALUATION_EPISODES},
+        )
 
-    print("\nResults against max player:")
-    env_player.play_against(
-        env_algorithm=ppo_eval,
-        opponent=second_opponent,
-        env_algorithm_kwargs={"model": model,
-                              "nb_episodes": NB_EVALUATION_EPISODES},
-    )
+        print("\nResults against intermediate type damage player:")
+        env_player.play_against(
+            env_algorithm=ppo_eval,
+            opponent=fourth_opponent,
+            env_algorithm_kwargs={"model": model,
+                                  "nb_episodes": NB_EVALUATION_EPISODES},
+        )
 
-    print("\nResults against basic type damage player:")
-    env_player.play_against(
-        env_algorithm=ppo_eval,
-        opponent=third_opponent,
-        env_algorithm_kwargs={"model": model,
-                              "nb_episodes": NB_EVALUATION_EPISODES},
-    )
+    if args.cross_eval == True:
+        async def cross_eval_opps():
+            cross_evaluation = await cross_evaluate(opponent_list, n_challenges=100)
+            table = [["-"] + [p.username for p in opponent_list]]
 
-    print("\nResults against intermediate type damage player:")
-    env_player.play_against(
-        env_algorithm=ppo_eval,
-        opponent=fourth_opponent,
-        env_algorithm_kwargs={"model": model,
-                              "nb_episodes": NB_EVALUATION_EPISODES},
-    )
+            for p_1, results in cross_evaluation.items():
+                table.append([p_1] + [cross_evaluation[p_1][p_2]
+                                      for p_2 in results])
 
-    # async def test_human():
-    #     await trained_agent.send_challenges("murkrowa", n_challenges=1)
+            print(tabulate(table))
 
-    # asyncio.get_event_loop().run_until_complete(test_human())
+        asyncio.get_event_loop().run_until_complete(cross_eval_opps())
+
+    if args.play != None:
+        async def play_human():
+            if args.train == None:
+                opp_idx = -1
+            else:
+                opp_idx = args.train
+
+            await opponent_list[opp_idx].send_challenges(args.p, n_challenges=1)
+
+        asyncio.get_event_loop().run_until_complete(play_human())
