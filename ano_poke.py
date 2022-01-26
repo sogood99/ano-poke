@@ -23,6 +23,7 @@ BATTLE_FORMAT = "gen8randombattle"
 
 def transform_action(action: int) -> int:
     if action == -1:
+        print("Finished...")
         return -1
     process_action = action - 1
     if process_action >= 4:
@@ -266,11 +267,12 @@ class MaxDamagePlayer(Player):
             return self.choose_random_move(battle)
 
 
-def ppo_train(env, model: PPO, nb_steps, save_dir):
+def ppo_train(env: Player, model: PPO, nb_steps, save_dir):
     print("Training...")
     model.learn(total_timesteps=nb_steps)
     print("Saving...")
     model.save(save_dir)
+    print("Saving Finished.")
 
 
 def ppo_eval(env: Player, model: PPO, nb_episodes):
@@ -335,23 +337,23 @@ if __name__ == "__main__":
     second_opponent = MaxDamagePlayer(
         battle_format=BATTLE_FORMAT, server_configuration=server_config)
 
-    third_opponent_model = PPO.load("./logs/simple_rl_1.zip")
+    third_opponent_model = PPO.load("./logs/simple_rl_0.zip")
     third_opponent = RlPlayer(
         battle_format=BATTLE_FORMAT, server_configuration=server_config)
     third_opponent.set_model(third_opponent_model)
 
-    fourth_opponent_model = PPO.load("./logs/simple_rl_2.zip")
+    fourth_opponent_model = PPO.load("./logs/simple_rl_1.zip")
     fourth_opponent = RlPlayer2(
         battle_format=BATTLE_FORMAT, server_configuration=server_config)
     fourth_opponent.set_model(fourth_opponent_model)
 
-    fifth_opponent_model = PPO.load("./logs/simple_rl_3.zip")
+    fifth_opponent_model = PPO.load("./logs/simple_rl_2.zip")
     fifth_opponent = RlPlayer3(
         battle_format=BATTLE_FORMAT, server_configuration=server_config)
     fifth_opponent.set_model(fifth_opponent_model)
 
-    opponent_list = [first_opponent, second_opponent, third_opponent,
-                     fourth_opponent, fifth_opponent]
+    opponent_list = [first_opponent, second_opponent,
+                     third_opponent, fourth_opponent, fifth_opponent]
     if args.train != None:
         if args.opp != None:
             assert 0 <= args.opp < len(
@@ -368,37 +370,37 @@ if __name__ == "__main__":
                                   "save_dir": save_dir+".zip"},
         )
 
-        # print("Results against random player:")
-        # env_player.play_against(
-        #     env_algorithm=ppo_eval,
-        #     opponent=first_opponent,
-        #     env_algorithm_kwargs={"model": model,
-        #                           "nb_episodes": NB_EVALUATION_EPISODES},
-        # )
+        print("Results against random player:")
+        env_player.play_against(
+            env_algorithm=ppo_eval,
+            opponent=first_opponent,
+            env_algorithm_kwargs={"model": model,
+                                  "nb_episodes": NB_EVALUATION_EPISODES},
+        )
 
-        # print("\nResults against max player:")
-        # env_player.play_against(
-        #     env_algorithm=ppo_eval,
-        #     opponent=second_opponent,
-        #     env_algorithm_kwargs={"model": model,
-        #                           "nb_episodes": NB_EVALUATION_EPISODES},
-        # )
+        print("\nResults against max player:")
+        env_player.play_against(
+            env_algorithm=ppo_eval,
+            opponent=second_opponent,
+            env_algorithm_kwargs={"model": model,
+                                  "nb_episodes": NB_EVALUATION_EPISODES},
+        )
 
-        # print("\nResults against basic type damage player:")
-        # env_player.play_against(
-        #     env_algorithm=ppo_eval,
-        #     opponent=third_opponent,
-        #     env_algorithm_kwargs={"model": model,
-        #                           "nb_episodes": NB_EVALUATION_EPISODES},
-        # )
+        print("\nResults against basic type damage player:")
+        env_player.play_against(
+            env_algorithm=ppo_eval,
+            opponent=third_opponent,
+            env_algorithm_kwargs={"model": model,
+                                  "nb_episodes": NB_EVALUATION_EPISODES},
+        )
 
-        # print("\nResults against intermediate type damage player:")
-        # env_player.play_against(
-        #     env_algorithm=ppo_eval,
-        #     opponent=fourth_opponent,
-        #     env_algorithm_kwargs={"model": model,
-        #                           "nb_episodes": NB_EVALUATION_EPISODES},
-        # )
+        print("\nResults against intermediate type damage player:")
+        env_player.play_against(
+            env_algorithm=ppo_eval,
+            opponent=fourth_opponent,
+            env_algorithm_kwargs={"model": model,
+                                  "nb_episodes": NB_EVALUATION_EPISODES},
+        )
 
     if args.cross_eval != None:
         print("Starting cross evaluation...")
