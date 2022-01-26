@@ -310,7 +310,7 @@ if __name__ == "__main__":
     parser.add_argument('-l', '--load', action='store_true',
                         required=False)
     parser.add_argument('-c', '--cross_eval',
-                        action='store_true', required=False)
+                        action='store', type=int, required=False)
     parser.add_argument('-p', '--play',
                         action='store', type=str, required=False, help="opponent to play against")
     args = parser.parse_args()
@@ -361,9 +361,9 @@ if __name__ == "__main__":
     fifth_opponent.set_model(fifth_opponent_model)
 
     opponent_list = [first_opponent, second_opponent, third_opponent,
-                     fourth_opponent, first_opponent]
+                     fourth_opponent, fifth_opponent]
     if args.train != None:
-        print(f"Training")
+        print(f"Training...")
         if args.opp != None:
             assert 0 <= args.opp < len(
                 opponent_list), f"Opponent must be betweent {0} and {len(opponent_list)}"
@@ -410,9 +410,11 @@ if __name__ == "__main__":
                                   "nb_episodes": NB_EVALUATION_EPISODES},
         )
 
-    if args.cross_eval == True:
+    if args.cross_eval != None:
+        print("Starting cross evaluation...")
+
         async def cross_eval_opps():
-            cross_evaluation = await cross_evaluate(opponent_list, n_challenges=100)
+            cross_evaluation = await cross_evaluate(opponent_list, n_challenges=args.cross_eval)
             table = [["-"] + [p.username for p in opponent_list]]
 
             for p_1, results in cross_evaluation.items():
@@ -424,6 +426,8 @@ if __name__ == "__main__":
         asyncio.get_event_loop().run_until_complete(cross_eval_opps())
 
     if args.play != None:
+        print(f"Sending challenge to {args.play}...")
+
         async def play_human():
             if args.train == None:
                 opp_idx = -1
