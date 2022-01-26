@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import numpy as np
+import random
 import argparse
 from tabulate import tabulate
 
@@ -21,12 +22,55 @@ BATTLE_FORMAT = "gen8randombattle"
 
 
 def transform_action(action: int) -> int:
+    if action == -1:
+        return -1
     process_action = action - 1
     if process_action >= 4:
         process_action += 12 - 4
     assert \
         -1 <= process_action < 4 or 12 <= process_action < 22, f"Simple assert {process_action}"
     return process_action
+
+
+def construct_move_vec(move: Move, battle: Battle) -> np.array:
+    if move == None:
+        return np.zeros(40)
+    move_base_power = move.base_power / 100
+    move_accuracy = move.accuracy
+
+    move_type_vec = np.zeros(18)
+    move_dmg_mult = move.expected_hits
+    if move.type:
+        move_dmg_mult *= move.type.damage_multiplier(
+            battle.opponent_active_pokemon.type_1,
+            battle.opponent_active_pokemon.type_2,
+        )
+        move_type_vec[move.type.value - 1] = 1
+
+    move_category = np.zeros(3)
+    move_category[move.category.value - 1] = 1
+
+    move_status = 1. if move.status != None or move.volatile_status != None else 0.
+
+    move_heal = move.heal
+
+    def get_boost(boost_dict: Dict) -> np.array:
+        boost_arr = np.zeros(7)
+        if (boost_dict == None):
+            return boost_arr
+        boost_arr[0] = boost_dict.get("spd", 0)
+        boost_arr[1] = boost_dict.get("atk", 0)
+        boost_arr[2] = boost_dict.get("def", 0)
+        boost_arr[3] = boost_dict.get("spa", 0)
+        boost_arr[4] = boost_dict.get("spd", 0)
+        boost_arr[5] = boost_dict.get("accuracy", 0)
+        boost_arr[6] = boost_dict.get("evasion", 0)
+        return boost_arr
+
+    move_self_boost = get_boost(move.self_boost)
+    move_enemy_boost = get_boost(move.boosts)
+
+    return np.concatenate([move_type_vec, [move_base_power, move_dmg_mult, move_accuracy], move_category, [move_status, move_heal], move_self_boost, move_enemy_boost])
 
 
 class SimpleRLEnvPlayer(Gen8EnvSinglePlayer):
@@ -94,49 +138,9 @@ class SimpleRLEnvPlayer2(SimpleRLEnvPlayer):
     def embed_battle(self, battle: Battle):
 
         # --------------- moves -------------------
-        def construct_move_vec(move: Move) -> np.array:
-            if move == None:
-                return np.zeros(40)
-            move_base_power = move.base_power / 100
-            move_accuracy = move.accuracy
-
-            move_type_vec = np.zeros(18)
-            move_dmg_mult = move.expected_hits
-            if move.type:
-                move_dmg_mult *= move.type.damage_multiplier(
-                    battle.opponent_active_pokemon.type_1,
-                    battle.opponent_active_pokemon.type_2,
-                )
-                move_type_vec[move.type.value - 1] = 1
-
-            move_category = np.zeros(3)
-            move_category[move.category.value - 1] = 1
-
-            move_status = 1. if move.status != None or move.volatile_status != None else 0.
-
-            move_heal = move.heal
-
-            def get_boost(boost_dict: Dict) -> np.array:
-                boost_arr = np.zeros(7)
-                if (boost_dict == None):
-                    return boost_arr
-                boost_arr[0] = boost_dict.get("spd", 0)
-                boost_arr[1] = boost_dict.get("atk", 0)
-                boost_arr[2] = boost_dict.get("def", 0)
-                boost_arr[3] = boost_dict.get("spa", 0)
-                boost_arr[4] = boost_dict.get("spd", 0)
-                boost_arr[5] = boost_dict.get("accuracy", 0)
-                boost_arr[6] = boost_dict.get("evasion", 0)
-                return boost_arr
-
-            move_self_boost = get_boost(move.self_boost)
-            move_enemy_boost = get_boost(move.boosts)
-
-            return np.concatenate([move_type_vec, [move_base_power, move_dmg_mult, move_accuracy], move_category, [move_status, move_heal], move_self_boost, move_enemy_boost])
-
-        move_vecs = [construct_move_vec(move)
+        move_vecs = [construct_move_vec(move, battle)
                      for move in battle.available_moves]
-        move_vecs += [construct_move_vec(None)
+        move_vecs += [construct_move_vec(None, None)
                       for _ in range(4-len(battle.available_moves))]
 
         # party pokemon
@@ -263,16 +267,18 @@ class MaxDamagePlayer(Player):
 
 
 def ppo_train(env, model: PPO, nb_steps, save_dir):
+    print("Training...")
     model.learn(total_timesteps=nb_steps)
+    print("Saving...")
     model.save(save_dir)
 
 
 def ppo_eval(env: Player, model: PPO, nb_episodes):
     env.reset_battles()
     mean_reward, std_reward = evaluate_policy(
-        model, model.get_env(), n_eval_episodes=nb_episodes)
+        model, model.get_env(), n_eval_episodes=nb_episodes+1)
     print(f"Mean Reward {mean_reward} with std {std_reward}")
-    print(f"Player won {env.n_won_battles} out of {env.n_finished_battles}")
+    print(f"Player won {env.n_won_battles} out of {env.n_finished_battles-1}")
 
 
 NB_TRAINING_STEPS = int(5e5)
@@ -347,7 +353,6 @@ if __name__ == "__main__":
     opponent_list = [first_opponent, second_opponent, third_opponent,
                      fourth_opponent, fifth_opponent]
     if args.train != None:
-        print(f"Training...")
         if args.opp != None:
             assert 0 <= args.opp < len(
                 opponent_list), f"Opponent must be betweent {0} and {len(opponent_list)}"
